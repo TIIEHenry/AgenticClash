@@ -1,0 +1,116 @@
+package com.github.kr328.clash
+
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.graphics.drawable.Icon
+import android.os.Build
+import android.service.quicksettings.Tile
+import android.service.quicksettings.TileService
+import androidx.annotation.RequiresApi
+import com.github.kr328.clash.common.compat.pendingIntentFlags
+import com.github.kr328.clash.common.compat.registerReceiverCompat
+import com.github.kr328.clash.common.constants.Intents
+import com.github.kr328.clash.common.constants.Permissions
+import com.github.kr328.clash.remote.StatusClient
+import com.github.kr328.clash.util.startClashService
+import com.github.kr328.clash.util.stopClashService
+import com.github.kr328.clash.service.R
+
+@RequiresApi(Build.VERSION_CODES.N)
+class TileService : TileService() {
+    private var clashRunning = false
+
+    override fun onClick() {
+        val tile = qsTile ?: return
+
+        when (tile.state) {
+            Tile.STATE_INACTIVE -> {
+                val prepare = startClashService()
+                if (prepare != null) {
+                    openVpnConsent(prepare)
+                }
+            }
+            Tile.STATE_ACTIVE -> {
+                stopClashService()
+            }
+        }
+    }
+
+    private fun openVpnConsent(prepare: Intent) {
+        val consent = VpnRequestActivity.consentIntent(this, prepare)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val pending = PendingIntent.getActivity(
+                this,
+                0,
+                consent,
+                pendingIntentFlags(PendingIntent.FLAG_UPDATE_CURRENT),
+            )
+            startActivityAndCollapse(pending)
+        } else {
+            @Suppress("DEPRECATION")
+            startActivityAndCollapse(consent)
+        }
+    }
+
+    override fun onStartListening() {
+        super.onStartListening()
+
+        registerReceiverCompat(
+            receiver,
+            IntentFilter().apply {
+                addAction(Intents.ACTION_CLASH_STARTED)
+                addAction(Intents.ACTION_CLASH_STOPPED)
+                addAction(Intents.ACTION_PROFILE_LOADED)
+                addAction(Intents.ACTION_SERVICE_RECREATED)
+            },
+            Permissions.RECEIVE_SELF_BROADCASTS,
+            null
+        )
+
+        val name = StatusClient(this).currentProfile()
+
+        clashRunning = name != null
+
+        updateTile()
+    }
+
+    override fun onStopListening() {
+        super.onStopListening()
+
+        unregisterReceiver(receiver)
+    }
+
+    private fun updateTile() {
+        val tile = qsTile ?: return
+
+        tile.state = if (clashRunning)
+            Tile.STATE_ACTIVE
+        else
+            Tile.STATE_INACTIVE
+
+        tile.label = getText(R.string.tile_name)
+
+        tile.icon = Icon.createWithResource(this, R.drawable.ic_logo_service)
+
+        tile.updateTile()
+    }
+
+    private val receiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intents.ACTION_CLASH_STARTED -> {
+                    clashRunning = true
+                }
+                Intents.ACTION_CLASH_STOPPED, Intents.ACTION_SERVICE_RECREATED -> {
+                    clashRunning = false
+                }
+            }
+
+            updateTile()
+        }
+    }
+}

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <include
+        domain="sharedpref"
+        path="app.xml" />
+    <include
+        domain="sharedpref"
+        path="tips.xml" />
+    <include
+        domain="sharedpref"
+        path="ui.xml" />
+</full-backup-content>
